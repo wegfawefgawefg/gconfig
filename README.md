@@ -136,6 +136,10 @@ Document lists store named/id'd documents in one file:
 
 Existing shapes can be loaded by passing custom root and record names.
 
+See [docs/gubsy-example.md](docs/gubsy-example.md) for a larger example showing
+global settings, user profiles, game settings profiles, bind profiles, save-slot
+metadata, schemas, and load flow.
+
 ## Build
 
 ```sh
