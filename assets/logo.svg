@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="gconfig logo">
+  <rect width="96" height="96" rx="18" fill="#17212b"/>
+  <rect x="13" y="13" width="70" height="70" rx="10" fill="#f2df9b"/>
+  <path d="M24 34h48M24 48h48M24 62h48" stroke="#17212b" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="34" cy="34" r="7" fill="#2b7a78"/>
+  <circle cx="57" cy="48" r="7" fill="#c8553d"/>
+  <circle cx="45" cy="62" r="7" fill="#355c7d"/>
+  <path d="M21 19c5-6 16-7 22-2" fill="none" stroke="#fff7cf" stroke-width="4" stroke-linecap="round"/>
+</svg>
