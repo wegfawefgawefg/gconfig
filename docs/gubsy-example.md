@@ -26,6 +26,70 @@ A plain JSON loader gives the caller a tree. The caller still has to write:
 one free-form data tree with no schema and no reconciliation, `gconfig` is the
 wrong tool.
 
+## Standard Relationship Model
+
+For a Gubsy-style game shell, the common relationship looks like this:
+
+```text
+Global settings
+  machine/install-wide document
+  not owned by a user profile
+
+User profiles
+  one record per local player identity
+  stores profile preferences and references to preferred shared documents
+
+Input profiles
+  shared document list
+  any user profile can point at the same input profile
+
+Game settings profiles
+  usually shared presets
+  any user profile can point at one, duplicate one, or make a personal one
+
+Save slots
+  owned by one user profile
+  not shared across user profiles unless the game explicitly supports that
+```
+
+`gconfig` can store all of these as one `Document` plus several
+`DocumentList`s. It does not enforce ownership rules. A game can enforce those
+rules by storing ids in documents and resolving them in game code.
+
+### Ownership Rules
+
+- Global settings are loaded once and applied to the install or machine.
+- User profiles are the root of player-local preferences.
+- Input profiles are shared because multiple users may prefer the same keyboard
+  or gamepad layout.
+- Game settings profiles may be shared when they are treated as presets.
+- Save slots are normally user-owned because save progress belongs to a player
+  identity.
+- Save metadata can live in `gconfig`; save payloads should live elsewhere.
+
+### Reference Fields
+
+A user profile can store ids that point into other document lists:
+
+```lisp
+(profile
+  (id 42)
+  (name "GMan")
+  (values
+    (key "profile.name" "GMan")
+    (key "preferred_input_profile" 1)
+    (key "preferred_game_settings" 100)
+    (key "last_save_slot" 3)))
+```
+
+Those fields are just config values. The game decides what to do when a
+referenced document is missing. Common repair policies are:
+
+- choose the first available shared input profile
+- create a default game settings profile
+- clear `last_save_slot` if the save slot no longer exists
+- warn the user before dropping a broken reference
+
 ## Example Files
 
 ### Global Settings
@@ -64,16 +128,16 @@ documents.
     (name "GMan")
     (values
       (key "profile.name" "GMan")
-      (key "last_binds_profile" 1)
-      (key "last_game_settings" 100)
+      (key "preferred_input_profile" 1)
+      (key "preferred_game_settings" 100)
       (key "last_save_slot" 3)))
   (profile
     (id 43)
     (name "Nees")
     (values
       (key "profile.name" "Nees")
-      (key "last_binds_profile" 2)
-      (key "last_game_settings" 101)
+      (key "preferred_input_profile" 2)
+      (key "preferred_game_settings" 101)
       (key "last_save_slot" 7))))
 ```
 
@@ -81,7 +145,8 @@ Typical use:
 
 - Load as a `DocumentList` with root `user_profiles` and record name `profile`.
 - Find the active user by id.
-- Read ids such as `last_binds_profile` and `last_game_settings`.
+- Read ids such as `preferred_input_profile`, `preferred_game_settings`, and
+  `last_save_slot`.
 - Use those ids to select documents from other lists.
 
 `gconfig` does not enforce that a referenced document exists. The game decides
@@ -126,13 +191,13 @@ Typical use:
 - Preserve unknown keys if mods or app-specific settings may exist.
 - Drop unknown keys if the file must exactly match the current schema.
 
-### Bind Profiles
+### Input Profiles
 
-Simple bindings can be modeled as a document list.
+Simple input bindings can be modeled as a shared document list.
 
 ```lisp
-(bind_profiles
-  (binds
+(input_profiles
+  (input_profile
     (id 1)
     (name "Keyboard")
     (values
@@ -141,7 +206,7 @@ Simple bindings can be modeled as a document list.
       (key "bind.cancel" "escape")
       (key "bind.left" "a")
       (key "bind.right" "d")))
-  (binds
+  (input_profile
     (id 2)
     (name "Gamepad")
     (values
@@ -159,7 +224,8 @@ the user profile reference to the active binds profile.
 
 ### Save Slots
 
-`gconfig` is not a save-game serializer, but it can store save-slot metadata.
+`gconfig` is not a save-game serializer, but it can store user-owned save-slot
+metadata.
 
 ```lisp
 (save_slots
@@ -168,6 +234,7 @@ the user profile reference to the active binds profile.
     (name "Caves Run")
     (values
       (key "display_name" "Caves Run")
+      (key "owner_user_profile" 42)
       (key "world" "caves")
       (key "level" 2)
       (key "play_seconds" 540)
@@ -177,6 +244,7 @@ the user profile reference to the active binds profile.
     (name "Daily")
     (values
       (key "display_name" "Daily")
+      (key "owner_user_profile" 43)
       (key "world" "jungle")
       (key "level" 4)
       (key "play_seconds" 1220)
@@ -185,6 +253,13 @@ the user profile reference to the active binds profile.
 
 The actual serialized game state should live somewhere else. The config document
 stores searchable/editable metadata and a path or id for the real save payload.
+
+Typical use:
+
+- Load all save metadata as a `DocumentList`.
+- Filter slots where `owner_user_profile` matches the active user id.
+- Use `last_save_slot` from the user profile to select the last-used owned slot.
+- Store the real game-state payload in the path referenced by `payload_path`.
 
 ## Example Schemas
 
@@ -213,8 +288,8 @@ global_schema.add_float("audio.master_volume", 1.0f)
 
 gconfig::Schema user_schema;
 user_schema.add_string("profile.name", "Player");
-user_schema.add_int("last_binds_profile", -1);
-user_schema.add_int("last_game_settings", -1);
+user_schema.add_int("preferred_input_profile", -1);
+user_schema.add_int("preferred_game_settings", -1);
 user_schema.add_int("last_save_slot", -1);
 
 gconfig::Schema game_schema;
@@ -260,7 +335,8 @@ if (!active_user) {
     // Game policy: create a user, choose a default, or show an error.
 }
 
-int game_id = active_user->document.get_int("last_game_settings", -1);
+int game_id = active_user->document.get_int("preferred_game_settings", -1);
+int input_id = active_user->document.get_int("preferred_input_profile", -1);
 gconfig::DocumentRecord* active_game = games.documents.find(game_id);
 if (!active_game) {
     // Game policy: create a replacement settings profile or fall back.
